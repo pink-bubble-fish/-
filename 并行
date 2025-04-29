@@ -1,0 +1,77 @@
+高斯消元串行版本：
+#include <iostream>
+#include <iomanip>
+#include <cstdlib>
+#include <chrono>
+
+using namespace std;
+using namespace chrono;
+
+const int N = 512; // 矩阵规模
+
+float A[N][N]; // 系数矩阵
+float b[N];    // 常数向量
+float x[N];    // 解向量
+
+// 初始化矩阵
+void initialize() {
+    srand(0); // 固定种子，确保实验可复现
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            if (i <= j)
+                A[i][j] = static_cast<float>(rand() % 100 + 1) + N;
+            else
+                A[i][j] = 0.0f;
+        }
+        b[i] = static_cast<float>(rand() % 100);
+    }
+}
+
+// 串行高斯消去
+void gaussian_serial() {
+    for (int k = 0; k < N; ++k) {
+        float pivot = A[k][k];
+
+        for (int j = k; j < N; ++j)
+            A[k][j] /= pivot;
+        b[k] /= pivot;
+
+        for (int i = k + 1; i < N; ++i) {
+            float factor = A[i][k];
+            for (int j = k; j < N; ++j)
+                A[i][j] -= factor * A[k][j];
+            b[i] -= factor * b[k];
+        }
+    }
+
+    for (int i = N - 1; i >= 0; --i) {
+        x[i] = b[i];
+        for (int j = i + 1; j < N; ++j)
+            x[i] -= A[i][j] * x[j];
+    }
+}
+
+// 打印部分结果
+void print_result() {
+    cout << "部分解 x[0~9]: ";
+    for (int i = 0; i < min(10, N); ++i)
+        cout << fixed << setprecision(4) << x[i] << " ";
+    cout << endl;
+}
+
+int main() {
+    cout << "矩阵规模 N = " << N << endl;
+
+    initialize();
+
+    auto start = high_resolution_clock::now();
+    gaussian_serial();
+    auto end = high_resolution_clock::now();
+
+    double duration = duration_cast<microseconds>(end - start).count() / 1000.0;
+    cout << "串行高斯消去耗时: " << fixed << setprecision(3) << duration << " ms" << endl;
+
+    print_result();
+
+    return 0;
+}
