@@ -1,0 +1,100 @@
+高斯消元并行版本：
+#include <iostream>
+#include <iomanip>
+#include <cstdlib>
+#include <chrono>
+#include <arm_neon.h> // 引入NEON指令集头文件
+
+using namespace std;
+using namespace chrono;
+
+const int N = 512; // 矩阵规模
+
+float A[N][N];
+float b[N];
+float x[N];
+
+// 初始化矩阵
+void initialize() {
+    srand(0);
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            if (i <= j)
+                A[i][j] = static_cast<float>(rand() % 100 + 1) + N;
+            else
+                A[i][j] = 0.0f;
+        }
+        b[i] = static_cast<float>(rand() % 100);
+    }
+}
+
+// SIMD并行化高斯消去
+void gaussian_simd() {
+    for (int k = 0; k < N; ++k) {
+        float pivot = A[k][k];
+        float32x4_t pivot_vec = vdupq_n_f32(pivot); // 将pivot广播成向量
+
+        int j = k;
+        // 步骤1：向量化归一化
+        for (; j + 4 <= N; j += 4) {
+            float32x4_t a_vec = vld1q_f32(&A[k][j]); // 加载4个元素
+            a_vec = vdivq_f32(a_vec, pivot_vec);      // 向量除法
+            vst1q_f32(&A[k][j], a_vec);               // 存回去
+        }
+        // 处理剩余不足4个的元素
+        for (; j < N; ++j) {
+            A[k][j] /= pivot;
+        }
+        b[k] /= pivot;
+
+        // 步骤2：消元
+        for (int i = k + 1; i < N; ++i) {
+            float factor = A[i][k];
+            float32x4_t factor_vec = vdupq_n_f32(factor);
+
+            int j = k;
+            for (; j + 4 <= N; j += 4) {
+                float32x4_t a_i_vec = vld1q_f32(&A[i][j]);
+                float32x4_t a_k_vec = vld1q_f32(&A[k][j]);
+                a_i_vec = vmlsq_f32(a_i_vec, factor_vec, a_k_vec); // A[i][j] -= factor * A[k][j]
+                vst1q_f32(&A[i][j], a_i_vec);
+            }
+            for (; j < N; ++j) {
+                A[i][j] -= factor * A[k][j];
+            }
+            b[i] -= factor * b[k];
+        }
+    }
+
+    // 步骤3：回代（串行）
+    for (int i = N - 1; i >= 0; --i) {
+        x[i] = b[i];
+        for (int j = i + 1; j < N; ++j)
+            x[i] -= A[i][j] * x[j];
+    }
+}
+
+// 打印部分结果
+void print_result() {
+    cout << "部分解 x[0~9]: ";
+    for (int i = 0; i < min(10, N); ++i)
+        cout << fixed << setprecision(4) << x[i] << " ";
+    cout << endl;
+}
+
+int main() {
+    cout << "矩阵规模 N = " << N << endl;
+
+    initialize();
+
+    auto start = high_resolution_clock::now();
+    gaussian_simd();
+    auto end = high_resolution_clock::now();
+
+    double duration = duration_cast<microseconds>(end - start).count() / 1000.0;
+    cout << "SIMD并行高斯消去耗时: " << fixed << setprecision(3) << duration << " ms" << endl;
+
+    print_result();
+
+    return 0;
+}
